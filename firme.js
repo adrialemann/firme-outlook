@@ -37,7 +37,7 @@ function escapeHtml(t) {
     .replace(/"/g, "&quot;");
 }
 
-function costruisciFirma(indirizzo, nomeVisualizzato) {
+function costruisciFirma(indirizzo, nomeVisualizzato, imgSrc) {
   var dati = CASELLE[indirizzo] || { nome: nomeVisualizzato || "Team Service S.r.l.", telefoni: ["+39 081 562 82 21"] };
   var nome = escapeHtml(dati.nome);
   var mail = escapeHtml(indirizzo);
@@ -54,7 +54,7 @@ function costruisciFirma(indirizzo, nomeVisualizzato) {
     "<table " + tbl + "><tr>" +
       // Colonna sinistra: logo Business Partner 24 ORE + motto
       '<td style="width:182px;text-align:center;vertical-align:middle">' +
-        '<img src="cid:' + NOME_IMMAGINE + '" width="160" height="82" alt="Business Partner Il Sole 24 ORE" style="display:block;margin:0 auto;border:0">' +
+        '<img src="' + (imgSrc || ("cid:" + NOME_IMMAGINE)) + '" width="160" height="82" alt="Business Partner Il Sole 24 ORE" style="display:block;margin:0 auto;border:0">' +
         '<div style="' + cal + 'font-size:11pt;line-height:1.2;color:#000000;padding-top:6px"><i>Dal 1994 al fianco delle imprese con oltre 190 centri in Italia.</i></div>' +
       "</td>" +
       '<td style="width:10px"></td>' +
@@ -83,35 +83,66 @@ function costruisciFirma(indirizzo, nomeVisualizzato) {
 
 /* ---------- Logica ---------- */
 
-// Aggiunge il logo come immagine incorporata, solo se non c'è già
-function assicuraImmagine(item, poi) {
-  item.getAttachmentsAsync(function (res) {
-    if (res.status === Office.AsyncResultStatus.Succeeded) {
-      for (var i = 0; i < res.value.length; i++) {
-        if (res.value[i].name === NOME_IMMAGINE) { poi(); return; }
-      }
-    }
-    item.addFileAttachmentFromBase64Async(BADGE_BASE64, NOME_IMMAGINE, { isInline: true }, function () { poi(); });
-  });
-}
+var URL_IMMAGINE = "https://adrialemann.github.io/firme-outlook/assets/badge-24ore.png";
 
-function applicaFirma(event) {
-  var item = Office.context.mailbox.item;
-  var fine = function () { if (event && event.completed) { event.completed(); } };
+function log(m) { try { console.log("[Firme TS] " + m); } catch (e) {} }
 
+// Inserisce la firma. usaAllegato=true: logo incorporato nella mail (come la firma attuale);
+// se l'operazione sugli allegati non riesce si usa il logo pubblicato su GitHub.
+function inserisciFirma(item, usaAllegato, poi) {
   item.from.getAsync(function (res) {
-    if (res.status !== Office.AsyncResultStatus.Succeeded || !res.value) { fine(); return; }
+    if (res.status !== Office.AsyncResultStatus.Succeeded || !res.value) {
+      log("from.getAsync non riuscito: " + (res.error && res.error.message));
+      poi(); return;
+    }
     var indirizzo = (res.value.emailAddress || "").toLowerCase();
-    var html = costruisciFirma(indirizzo, res.value.displayName);
-    assicuraImmagine(item, function () {
-      item.body.setSignatureAsync(html, { coercionType: Office.CoercionType.Html }, function () { fine(); });
+    log("mittente: " + indirizzo);
+
+    var scrivi = function (imgSrc) {
+      var html = costruisciFirma(indirizzo, res.value.displayName, imgSrc);
+      item.body.setSignatureAsync(html, { coercionType: Office.CoercionType.Html }, function (r) {
+        if (r.status !== Office.AsyncResultStatus.Succeeded) { log("setSignatureAsync errore: " + (r.error && r.error.message)); }
+        poi();
+      });
+    };
+
+    if (!usaAllegato) { scrivi(URL_IMMAGINE); return; }
+
+    item.getAttachmentsAsync(function (a) {
+      if (a.status !== Office.AsyncResultStatus.Succeeded) { scrivi(URL_IMMAGINE); return; }
+      for (var i = 0; i < a.value.length; i++) {
+        if (a.value[i].name === NOME_IMMAGINE) { scrivi(null); return; }
+      }
+      item.addFileAttachmentFromBase64Async(BADGE_BASE64, NOME_IMMAGINE, { isInline: true }, function (r) {
+        scrivi(r.status === Office.AsyncResultStatus.Succeeded ? null : URL_IMMAGINE);
+      });
     });
   });
 }
 
-function onNewMessageComposeHandler(event) { applicaFirma(event); }
-function onMessageFromChangedHandler(event) { applicaFirma(event); }
-function applicaFirmaPulsante(event) { applicaFirma(event); }
+function onNewMessageComposeHandler(event) {
+  inserisciFirma(Office.context.mailbox.item, true, function () { event.completed(); });
+}
+
+// Al cambio del mittente Outlook toglie la firma e, subito dopo, applica la firma predefinita
+// del nuovo mittente (nessuna). Per non farci sovrascrivere, la reinseriamo e poi la
+// reinseriamo ancora dopo un attimo.
+function onMessageFromChangedHandler(event) {
+  var item = Office.context.mailbox.item;
+  inserisciFirma(item, true, function () {
+    setTimeout(function () {
+      inserisciFirma(item, true, function () {
+        setTimeout(function () {
+          inserisciFirma(item, true, function () { event.completed(); });
+        }, 2000);
+      });
+    }, 800);
+  });
+}
+
+function applicaFirmaPulsante(event) {
+  inserisciFirma(Office.context.mailbox.item, true, function () { event.completed(); });
+}
 
 Office.onReady(function () {});
 Office.actions.associate("onNewMessageComposeHandler", onNewMessageComposeHandler);
