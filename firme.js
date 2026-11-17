@@ -183,6 +183,13 @@ function onMessageFromChangedHandler(event) {
   });
 }
 
+// Quando si aggiungono o cambiano i destinatari (A, Cc, Ccn) la firma viene ricontrollata:
+// dopo il cambio del "Da" basta inserire il destinatario e la firma si aggiorna.
+function onMessageRecipientsChangedHandler(event) {
+  log("destinatari cambiati");
+  inserisciFirma(Office.context.mailbox.item, true, function () { event.completed(); });
+}
+
 function applicaFirmaPulsante(event) {
   inserisciFirma(Office.context.mailbox.item, true, function () { event.completed(); });
 }
@@ -190,4 +197,5 @@ function applicaFirmaPulsante(event) {
 Office.onReady(function () {});
 Office.actions.associate("onNewMessageComposeHandler", onNewMessageComposeHandler);
 Office.actions.associate("onMessageFromChangedHandler", onMessageFromChangedHandler);
+Office.actions.associate("onMessageRecipientsChangedHandler", onMessageRecipientsChangedHandler);
 Office.actions.associate("applicaFirmaPulsante", applicaFirmaPulsante);
