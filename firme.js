@@ -120,8 +120,51 @@ function inserisciFirma(item, usaAllegato, poi) {
   });
 }
 
+// Controllo continuo del mittente: Outlook web non sempre avvisa il componente quando si
+// cambia il campo "Da", quindi ogni 1,5 secondi controlliamo noi chi è il mittente e,
+// se è cambiato, rimettiamo la firma giusta. Il controllo dura finché la mail è aperta
+// (al massimo 30 minuti).
+var ultimoMittente = null;
+var controlloAttivo = false;
+
+function avviaControlloMittente(item, fine) {
+  if (controlloAttivo) { return; }
+  controlloAttivo = true;
+  var inizio = Date.now();
+  var occupato = false;
+  var timer = setInterval(function () {
+    if (Date.now() - inizio > 30 * 60 * 1000) {
+      clearInterval(timer); controlloAttivo = false; fine(); return;
+    }
+    if (occupato) { return; }
+    item.from.getAsync(function (res) {
+      if (res.status !== Office.AsyncResultStatus.Succeeded || !res.value) { return; }
+      var ora = (res.value.emailAddress || "").toLowerCase();
+      if (ora && ora !== ultimoMittente) {
+        log("mittente cambiato: " + ultimoMittente + " -> " + ora);
+        occupato = true;
+        ultimoMittente = ora;
+        // breve attesa: Outlook prima toglie la vecchia firma, poi inseriamo la nuova
+        setTimeout(function () {
+          inserisciFirma(item, true, function () {
+            setTimeout(function () { inserisciFirma(item, true, function () { occupato = false; }); }, 1500);
+          });
+        }, 700);
+      }
+    });
+  }, 1500);
+}
+
 function onNewMessageComposeHandler(event) {
-  inserisciFirma(Office.context.mailbox.item, true, function () { event.completed(); });
+  var item = Office.context.mailbox.item;
+  item.from.getAsync(function (res) {
+    if (res.status === Office.AsyncResultStatus.Succeeded && res.value) {
+      ultimoMittente = (res.value.emailAddress || "").toLowerCase();
+    }
+    inserisciFirma(item, true, function () {
+      avviaControlloMittente(item, function () { event.completed(); });
+    });
+  });
 }
 
 // Al cambio del mittente Outlook toglie la firma e, subito dopo, applica la firma predefinita
