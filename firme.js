@@ -153,17 +153,6 @@ function onMessageRecipientsChangedHandler(event) {
   inserisciFirma(Office.context.mailbox.item, function () { event.completed(); });
 }
 
-// All'invio: rimette la firma del mittente scelto e poi lascia partire la mail.
-// La mail parte comunque, anche se l'inserimento della firma non riesce.
-function onMessageSendHandler(event) {
-  var finito = false;
-  var lascia = function () { if (!finito) { finito = true; event.completed({ allowEvent: true }); } };
-  setTimeout(lascia, 8000); // sicurezza: dopo 8 secondi la mail parte in ogni caso
-  try {
-    inserisciFirma(Office.context.mailbox.item, lascia);
-  } catch (e) { log("errore all'invio: " + e); lascia(); }
-}
-
 function applicaFirmaPulsante(event) {
   inserisciFirma(Office.context.mailbox.item, function () { event.completed(); });
 }
@@ -172,5 +161,4 @@ Office.onReady(function () {});
 Office.actions.associate("onNewMessageComposeHandler", onNewMessageComposeHandler);
 Office.actions.associate("onMessageFromChangedHandler", onMessageFromChangedHandler);
 Office.actions.associate("onMessageRecipientsChangedHandler", onMessageRecipientsChangedHandler);
-Office.actions.associate("onMessageSendHandler", onMessageSendHandler);
 Office.actions.associate("applicaFirmaPulsante", applicaFirmaPulsante);
